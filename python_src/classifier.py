@@ -1,5 +1,7 @@
 from __future__ import division
 
+import collections
+import itertools
 import json
 import matplotlib.axes
 import matplotlib.pyplot as plt
@@ -14,143 +16,222 @@ import wave
 LYRIC_WEIGHT = 250000000
 TIME_WEIGHT = 1000000000
 
-def getAmplitude(windowData):
-    accumulator = 0
-    for i in range(0, len(windowData)):
-        accumulator += abs(windowData[i])
-    amplitude = accumulator / len(windowData)
-    return amplitude
+# Represents a Lyric Section
+#  index is the index number in the collection
+#  time_indicies is a tuple of 2-tuples of start and end time of the lyric section in the song
+#  text is the text to display on the screen
+LyricSection = collections.namedtuple('LyricSection', ('index', 'time_indicies', 'text'))
 
-def readWaveData(waveFile):
-    # read wave data
-    length = waveFile.getnframes()
-    waveDataTemp = waveFile.readframes(length)
-    waveData = struct.unpack('<' + ('h' * int(len(waveDataTemp) / 2)), waveDataTemp)
-    return (waveData, length)
+# Represents a DataPoint in our feature space (i.e. a window of the audio we've heard)
+DataPoint = collections.namedtuple('DataPoint', ('fft', 'last_window_lyric_index', 'last_actual_lyric_index', 'relative_time_ratio'))
 
-waveFile = wave.open('chris_tomlin-amazing_grace-training.wav', 'r')
+class SongClassifier(object):
+    def __init__(self, lyrics):
+        self.lyrics = lyrics
+        self.last_actual_lyric = -1
+        self.last_window_lyric = -1
+        self.first_segment_length = -1
+        self.current_segment_start = 0
+        self.pca = None
+        self.gmm = None
 
-waveData, length = readWaveData(waveFile)
-#with open('wavedata.txt', 'w') as f:
-#    f.write(str(waveData))
+    def fit(self, training_data):
+        lyric_feature_coordinates = {l: list(_data_point_to_feature_coordinates(dp) for dp in data) for l, data in training_data.iteritems()}
+        pca_data = list(itertools.chain(*lyric_feature_coordinates.values()))
 
-print 'length = ', length
+        self.pca = sklearn.decomposition.PCA(n_components=20)
+        self.pca.fit(pca_data)
 
-frameRate = waveFile.getframerate()
+        lyric_gmm_data = {l: self.pca.transform(d) for l, d in lyric_feature_coordinates.iteritems()}
+        lyric_means = [ld.mean() for ld in lyric_gmm_data.values()]
 
-print 'frame rate = ', frameRate
+        self.gmm = sklearn.mixture.GMM(len(lyrics), covariance_type='full')
+        self.gmm.means_ = lyric_means
+        gmm_data = numpy.array([itertools.chain(list(v) for v in lyric_gmm_data.values())])
 
-windowSizeMS = 100
+        self.gmm.fit(gmm_data)
 
-windowSizeFrames = 40000
-windowSizeMS = windowSizeFrames / waveFile.getframerate()
+    def predict(self, window, start_time):
+        predict_last_window_lyric = (self.last_window_lyric * LYRIC_WEIGHT)
+        predict_last_actual_lyric = self.last_actual_lyric * LYRIC_WEIGHT
 
-print 'windowSizeFrames = ', windowSizeFrames
-print 'windowSizeMS = ', windowSizeMS
+        predict_relative_time = start_time - self.current_segment_start
+        predict_relative_time_ratio = predict_relative_time / (self.first_segment_length if self.first_segment_length != -1 else self.lyrics[0].time_indicies[0][1]) * TIME_WEIGHT
 
-windowInterval = int(windowSizeFrames / 10)
+        fft = numpy.fft.fft(window)
+        predict_dp = DataPoint(fft, predict_last_window_lyric, predict_last_actual_lyric, predict_relative_time)
+        predict_feature_coordinate = _data_point_to_feature_coordinates(predict_dp)
 
-# A list of 2-tuples of lyric and FFT
-ffts = []
+        gmm_data = self.pca.transform(predict_feature_coordinate)
+        lyric_index = self.gmm.predict(gmm_data)
+
+        if lyric_index != self.last_window_lyric and self.last_window_lyric != -1:
+            self.last_actual_lyric = self.last_window_lyric
+            if self.first_segment_length == -1:
+                self.first_segment_length = absolute_time
+        self.last_window_lyric = lyric_index
+
+        return lyric_index
 
 # A list of 3-tuples of start time, end time and lyrics text
-lyrics = [(0, 0, 15.5, 'Amazing grace how sweet the sound, that saved a wretch like me'),
-          (1, 15.5, 31, 'I once was lost, but now am found.  Was blind but now I see.')]
-lyric_index = 0
-bin_boundaries = ((20, 22), (22, 25), (25, 32), (32, 47), (47, 84), (84, 168), (168, 360), (360, 803), (803, 1821), (1821, 4200))
+    
+def generate_training_data(wav_file_path, lyrics, generate_fft_images=False, generate_pca_image=False):
+    window_size_frames = 40000
+    window_interval = int(window_size_frames / 10)
 
-for i in xrange(0, length - windowSizeFrames, windowInterval):
-    window = waveData[i:(i + windowSizeFrames)]
+    frame_rate, windows = _load_wav_file(wav_file_path, window_size_frames, window_interval)
 
-    # FFT each window to get the frequencies
-    window_fft = numpy.absolute(numpy.fft.fft(window))
+    window_size_ms = window_size_frames / frame_rate
+    
+    # Dictionary of lyric to list of data points
+    lyric_data = {l: [] for l in lyrics}
+    last_data_point_lyric = None
 
-    # Remove anything below 20Hz because humans can't hear that
-    window_fft[0:19] = (0,) * 19
+    for absolute_time, window in windows:
+        # FFT each window to get the frequencies
+        window_fft = numpy.absolute(numpy.fft.fft(window))
 
-    # Remove anything above 20kHz because humans can't hear that and it's just a reflection
-    window_fft = window_fft[:5000]
+        # Remove anything below 20Hz because humans can't hear that
+        window_fft[0:19] = (0,) * 19
 
-    # Get the lyrics
-    if lyrics[lyric_index][2] < i / frameRate:
-        print "Moved to lyric {0} at {1}".format(lyric_index + 1, i)
-        lyric_index += 1
+        # Remove anything above 5kHz because intruments don't go that high
+        window_fft = window_fft[:5000]
 
-    # Compute the time we are at in the current lyric, as a ratio of the length of the first lyric
-    absolute_time = i / frameRate
-    relative_time = absolute_time - lyrics[lyric_index][1]
-    relative_time_ratio = relative_time / (lyrics[0][2] - lyrics[0][1])
+        if generate_fft_images:
+            plt.subplot(121)
+            plt.plot(window)
+            plt.subplot(122)
+            plt.plot(window_fft)
+            plt.show()
+            plt.savefig('fft_{0}.png'.format(i))
+            plt.clf()
 
-    # Get the verse of the last window and the last verse we were in
-    verses = ((ffts[-1][0][0] if i > 0 else 0) * LYRIC_WEIGHT,
-              ((lyric_index - 1)) * LYRIC_WEIGHT,
-              relative_time_ratio * TIME_WEIGHT)
-    verses = numpy.array(verses)
+        # Get the lyrics
+        lyric, lyric_start_time, lyric_end_time = _find_lyric(lyrics, absolute_time)
 
-    window_fft = numpy.concatenate((window_fft, verses))
-    if False:
-        plt.subplot(121)
-        plt.plot(window)
-        #ax2 = matplotlib.axes.Axes(fig, ax1.get_position())
-        plt.subplot(122)
-        plt.plot(fft_bins)
-        plt.show()
-        plt.savefig('fft_{0}.png'.format(i))
-        plt.clf()
-        break
-    ffts.append((lyrics[lyric_index], window_fft))
+        # Compute the time we are at in the current lyric, as a ratio of the length of the first lyric
+        relative_time = absolute_time - lyric_start_time
+        relative_time_ratio = relative_time / (lyric_end_time - lyric_start_time)
 
-pca_data = numpy.array([i[1] for i in ffts])
-if False:
-    pca_3d = sklearn.decomposition.PCA(n_components=3)
-    pca_3d.fit(pca_data)
+        # Get the verse of the last window and the last verse we were in
+        verses = ((last_data_point_lyric.index if last_data_point_lyric is not None else 0),
+                  ((lyric.index - 1)))
+        verses = numpy.array(verses)
+        data_point = DataPoint(window_fft, verses[0], verses[1], relative_time_ratio)
+            
+        lyric_data[lyric].append(data_point)
+        last_data_point_lyric = lyric
 
-    lyric_data = [numpy.array([pca_3d.transform(d[1])[0] for i, d in enumerate(ffts) if d[0] == l]) for l in lyrics]
-    fig = plt.figure()
-    ax = fig.add_subplot(111, projection='3d')
-    def get_component(data, index):
-        return numpy.array([d[index] for d in data])
+    if generate_pca_image:
+        # Use Principle Component Analysis to get the 3 dimensions with the greatest variance
+        lyric_feature_coordinates = {l: list(_data_point_to_feature_coordinates(dp) for dp in data) for l, data in lyric_data.iteritems()}
+        pca_data = list(itertools.chain(*lyric_feature_coordinates.values()))
+        pca_3d = sklearn.decomposition.PCA(n_components=3)
+        pca_3d.fit(pca_data)
 
-    transposed_lyric_data = [ld.transpose() for ld in lyric_data]
-    ax.scatter(transposed_lyric_data[0][0], transposed_lyric_data[0][1], transposed_lyric_data[0][2], c='r')
-    ax.scatter(transposed_lyric_data[1][0], transposed_lyric_data[1][1], transposed_lyric_data[1][2], c='b')
-    plt.show()
-    exit()
+        # Now graph them
+        transformed_lyric_data = {l: pca_3d.transform(data).transpose() for l, data in lyric_feature_coordinates.iteritems()}
+        fig = plt.figure()
+        ax = fig.add_subplot(111, projection='3d')
 
-pca = sklearn.decomposition.PCA(n_components=20)
-gmm_data = pca.fit_transform(pca_data)
+        for (l, data), color in zip(transformed_lyric_data.iteritems(), 'cb'):
+            ax.scatter(*data, c=color)
+        plt.savefig('pca_3d.png')
 
-lyric_data = [numpy.array([gmm_data[i] for i, d in enumerate(ffts) if d[0] == l]) for l in lyrics]
-lyric_means = [ld.mean() for ld in lyric_data]
-gmm = sklearn.mixture.GMM(len(lyrics), covariance_type='full')
-gmm.means_ = lyric_means
-gmm.fit(gmm_data)
+    return lyric_data
 
-last_actual_lyric = -1
-last_window_lyric = -1
-first_segment_length = -1
-current_segment_start = 0
-errors = 0
-for i, (lyric, fft) in enumerate(ffts):
-    fft[-3] = (last_window_lyric * LYRIC_WEIGHT)
-    fft[-2] = last_actual_lyric * LYRIC_WEIGHT
+    pca = sklearn.decomposition.PCA(n_components=20)
+    pca.fit(pca_data)
 
-    absolute_time = i * windowSizeFrames / frameRate
-    relative_time = absolute_time - current_segment_start
-    relative_time_ratio = relative_time / (first_segment_length if first_segment_length != -1 else lyrics[0][2])
+    lyric_gmm_data = {l: pca.transform(d) for l, d in lyric_data.iteritems()}
+    lyric_means = [ld.mean() for ld in lyric_gmm_data.values()]
+    return lyric_means, list(itertools.chain(*lyric_gmm_data.values()))
 
-    fft[-1] = relative_time_ratio * TIME_WEIGHT
 
-    gmm_data = pca.transform(fft)
-    lyric_index = gmm.predict(gmm_data)
-    if lyrics[lyric_index] != lyric:
-        print 'Failed to predict {0} (chose {1} instead of {2})'.format(i, lyric_index, lyric[0])
-        errors += 1
+    gmm = sklearn.mixture.GMM(len(lyrics), covariance_type='full')
+    gmm.means_ = lyric_means
+    gmm.fit(itertools.chain(lyric_gmm_data.values()))
 
-    if lyric_index != last_window_lyric and last_window_lyric != -1:
-        last_actual_lyric = last_window_lyric
-        if first_segment_length == -1:
-            first_segment_length = absolute_time
-    last_window_lyric = lyric_index
+    last_actual_lyric = -1
+    last_window_lyric = -1
+    first_segment_length = -1
+    current_segment_start = 0
+    errors = 0
+    for i, (lyric, fft) in enumerate(ffts):
+        fft[-3] = (last_window_lyric * LYRIC_WEIGHT)
+        fft[-2] = last_actual_lyric * LYRIC_WEIGHT
 
-print 'Made {0} errors'.format(errors)
+        absolute_time = i * windowSizeFrames / frameRate
+        relative_time = absolute_time - current_segment_start
+        relative_time_ratio = relative_time / (first_segment_length if first_segment_length != -1 else lyrics[0][2])
+
+        fft[-1] = relative_time_ratio * TIME_WEIGHT
+
+        gmm_data = pca.transform(fft)
+        lyric_index = gmm.predict(gmm_data)
+        if lyrics[lyric_index] != lyric:
+            print 'Failed to predict {0} (chose {1} instead of {2})'.format(i, lyric_index, lyric[0])
+            errors += 1
+
+        if lyric_index != last_window_lyric and last_window_lyric != -1:
+            last_actual_lyric = last_window_lyric
+            if first_segment_length == -1:
+                first_segment_length = absolute_time
+        last_window_lyric = lyric_index
+
+    print 'Made {0} errors'.format(errors)
+
+
+def _find_lyric(lyrics, time):
+    for l in lyrics:
+        for start, end in l.time_indicies:
+            if time >= start and time < end:
+                return l, start, end
+    else:
+        raise KeyError('Couldn\'t find a lyric at {0}'.format(time))
+
+
+def _data_point_to_feature_coordinates(dp):
+    return numpy.concatenate((dp.fft, numpy.array([dp.last_window_lyric_index * LYRIC_WEIGHT, dp.last_actual_lyric_index * LYRIC_WEIGHT, dp.relative_time_ratio * TIME_WEIGHT])))
+
+
+def _load_wav_file(wav_file_path, window_size_frames, window_interval):
+    wave_file = wave.open(wav_file_path, 'r')
+    try:
+        length = wave_file.getnframes()
+        wave_data = wave_file.readframes(length)
+        wave_data = struct.unpack('<' + ('h' * int(len(wave_data) / 2)), wave_data)
+    finally:
+        wave_file.close()
+
+    def window_generator():
+        for i in xrange(0, length - window_size_frames, window_interval):
+            yield i / frame_rate, wave_data[i:(i + window_size_frames)]
+
+    frame_rate = wave_file.getframerate()
+
+    return frame_rate, window_generator()
+
+if __name__ == '__main__':
+    training_file = 'chris_tomlin-amazing_grace-training.wav'
+    lyrics = [LyricSection(0, ((0, 15.5),), 'Amazing grace how sweet the sound, that saved a wretch like me'),
+              LyricSection(1, ((15.5, 31),), 'I once was lost, but now am found.  Was blind but now I see.')]
+    td = generate_training_data(training_file, lyrics, generate_pca_image=True)
+
+    classifier = SongClassifier(lyrics)
+    classifier.fit(td)
+
+    window_size_frames = 40000
+    window_interval = int(window_size_frames / 10)
+
+    frame_rate, windows = _load_wav_file(training_file, window_size_frames, window_interval)
+    errors = 0
+    for i, (absolute_time, w) in enumerate(windows):
+        correct_lyric, _, _ = _find_lyric(lyrics, absolute_time)
+        predicted_lyric = classifier.predict(w, absolute_time)
+
+        if correct_lyric.index != predicted_lyric:
+            errors += 1
+            print 'Failed to correctly predict {0] (guessed {1}, expected {2})'.format(i, predicted_lyric, correct_lyric)
+
+    print 'Made {0} errors'.format(errors)
