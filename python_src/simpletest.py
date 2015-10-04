@@ -1,3 +1,4 @@
+import collections
 import warnings
 import json
 import sys
@@ -24,7 +25,8 @@ if __name__ == '__main__':
     djv = Dejavu(config)
 
     # Fingerprint all the mp3's in the directory we give it
-    djv.fingerprint_directory("/home/thomas/Documents/projects/LazyWorship/test_audio-nonfree/chris_tomlin-amazin_grace_verses", [".wav"])
+    print 'Fingerprinting...'
+    djv.fingerprint_directory("..\\audio", [".wav"])
 
     # Recognize audio from a file
 #    song = djv.recognize(FileRecognizer, "mp3/Sean-Fournier--Falling-For-You.mp3")
@@ -44,24 +46,41 @@ if __name__ == '__main__':
     # Or recognize audio from your microphone for `secs` seconds
     def process_djv():
         last_lyrics = 0
+        dq = collections.deque(maxlen=5)
         while True:
             secs = 1
             song = djv.recognize(MicrophoneRecognizer, seconds=secs)
-            if song is not None:
+            song_name = song['song_name'] if song is not None else None
+            
+            dq.append(song_name)
+            dq_summary = {s: sum(1 for i in dq if i == s) for s in dq}
+            print dq_summary, 
+            modal_song = sorted(dq_summary.iteritems(), key=lambda x:x[1], reverse=True)[0]
+            print modal_song
+            if modal_song[1] < len(dq) / 2.0:
+                print 'No consensus'
+                continue
+
+            modal_song_name = modal_song[0]
+
+            if modal_song_name is not None:
 #                sys.stdout.write("\r%s" % song['song_name'])
 #                sys.stdout.flush()
-                if song['song_name'] == last_lyrics:
+                if modal_song_name != last_lyrics:
                     if USE_DISP:
-                        disp.update_text(lines[song['song_name']])
+                        disp.update_text(lines[modal_song_name])
                     else:
-                        print lines[song['song_name']]
-                last_lyrics = song['song_name']
+                        print lines[modal_song_name]
+                last_lyrics = modal_song_name
+            else:
+                print '.', 
     if USE_DISP:
         thread = threading.Thread(target=process_djv)
         thread.daemon = True
         thread.start()
         gtk.main()
     else:
+        print 'Running recognition'
         process_djv()
                 
 #        if song is None:
