@@ -7,37 +7,62 @@ import db_mysql
 import threading
 import record_wav
 import dejavu_handler
+from dejavu.recognize import MicrophoneRecognizer
 
 
 class LazyWorship():
-    def __init__(self):
+    def __init__(self, dejavu_mic=False):
         self.disp = display.display()
         self.djv = dejavu_handler.dejavu_handler()
-        self.rwav = record_wav.AudioRecorder()
+        self.dejavu_mic = dejavu_mic
+        if dejavu_mic:
+            pass
+        else:
+            self.rwav = record_wav.AudioRecorder()
+            self.rwav.setWindowSizeSecs(1)
+            self.rwav.setWindowStepSizeSecs(1)
         self.db = db_mysql.Database()
+        pass
+    
+    def run(self):
+        self.au_thread = threading.Thread(target=self.run_recorder)
+        self.au_thread.daemon = True
+        self.au_thread.start()
         gtk.main()
         pass
     
-    def __run_recorder(self):
+    def run_recorder(self):
+        self.buff = []
         while True:
-            self.buff = self.rwav.getBuffer()
-            fname = self.djv.recognise(self.buff)
+            fname = ""
+            if self.dejavu_mic:
+                # their reader
+                mic_res = self.djv.djv.recognize(MicrophoneRecognizer, seconds=1)
+                if mic_res is not None:
+                    fname = mic_res['song_name']
+            else:
+                # our reader
+                while len(self.buff) == 0:
+                    self.buff = self.rwav.getWindowBuffer()
+                fname = self.djv.recognise(self.buff)
             song, verse, part = self.fname_to_parts(fname)
-            self.disp.update_lyrics(self.db.get_lyrics(song, verse, part))
+            self.disp.update_text(self.db.get_lyrics(song, verse, part))
             
     def fname_to_parts(self, fname):
-        match = re.match('^([a-z_]+)-v([0-9]+)-p([0-9]+)$', fname)
         song = "unknown"
         verse = 0
         part = 0
-        if match is not None:
-            song = match.groups(1)
-            verse = match.groups(2)
-            part = match.groups(3)
+        if fname is not None:
+            match = re.match('^([a-z_]+)-v([0-9]+)-p([0-9]+)$', fname)
+            if match is not None:
+                song = match.group(1)
+                verse = int(match.group(2))
+                part = int(match.group(3))
         return song, verse, part
 
-    def import_prints(self, dirs):
-        self.djv.fingerprint(dirs)
+    def import_prints(self, dirs, ext):
+        for d in dirs:
+            self.djv.fingerprint(d, ext)
         pass
 
 
@@ -45,8 +70,11 @@ class LazyWorship():
 import argparse
 parser = argparse.ArgumentParser(description='Song presentation software that advances based on audio analysis')
 parser.add_argument('--import_dir', metavar='DIR', nargs='*', help='Any directories that you with to import fingerprints of')
+parser.add_argument('--import_ext', metavar='EXT', nargs='*', help='Any directories that you with to import fingerprints of', default=['.wav'])
+parser.add_argument('--dejavu_mic', action='store_true', help='Any directories that you with to import fingerprints of', default=False)
 args = parser.parse_args()
 
-lazyworship = LazyWorship()
+lazyworship = LazyWorship(args.dejavu_mic)
 if args.import_dir is not None:
-    lazyworship.import_prints(args.import_dir)
+    lazyworship.import_prints(args.import_dir, args.import_ext)
+lazyworship.run()
