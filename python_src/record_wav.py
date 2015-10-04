@@ -42,9 +42,9 @@ class AudioRecorder:
     def callback(self, in_data, frame_count, time_info, status):
         #print '* frame count = ', frame_count
         data = np.fromstring(in_data, dtype=np.int16)
+        condition.acquire()
         self.windowBuffer.extend(data)
         #print 'length windowBuffer = ', len(self.windowBuffer)
-        condition.acquire()
         condition.notifyAll()
         condition.release()
         return (in_data, pyaudio.paContinue)
@@ -62,8 +62,8 @@ class AudioRecorder:
         condition.wait()
         condition.release()
         if(len(self.windowBuffer) >= self.windowSize):
-            temp_my_buffer = list(self.windowBuffer[-self.windowSize:])
-            discardSize = (len(self.windowBuffer) - self.windowSize) + self.windowStepSize
+            temp_my_buffer = list(self.windowBuffer[0:self.windowSize])
+            discardSize = self.windowStepSize
             self.windowBuffer[0:discardSize] = []
             return temp_my_buffer
         else:
