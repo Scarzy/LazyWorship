@@ -1,9 +1,10 @@
+import collections
 import warnings
 import json
 import sys
 import threading
 
-USE_DISP = False
+USE_DISP = True
 
 if USE_DISP:
     import display
@@ -24,7 +25,8 @@ if __name__ == '__main__':
     djv = Dejavu(config)
 
     # Fingerprint all the mp3's in the directory we give it
-    djv.fingerprint_directory("/home/thomas/Documents/projects/LazyWorship/test_audio-nonfree/chris_tomlin-amazin_grace_verses", [".wav"])
+    print 'Fingerprinting...'
+    djv.fingerprint_directory("..\\audio", [".wav"])
 
     # Recognize audio from a file
 #    song = djv.recognize(FileRecognizer, "mp3/Sean-Fournier--Falling-For-You.mp3")
@@ -32,36 +34,53 @@ if __name__ == '__main__':
     if USE_DISP:
         disp = display.display()
 
-    lines = {'0': "Amazing grace\nHow sweet the sound\nThat saved a wretch like me\nI once was lost, but now I'm found\nWas blind, but now I see",
-             '1':"'Twas grace that taught my heart to fear\nAnd grace my fears relieved\nHow precious did that grace appear\nThe hour I first believed",
-             '2': "The Lord has promised good to me\nHis word my hope secures\nHe will my shield and portion be\nAs long as life endures",
-             '3': "The earth shall soon dissolve like snow\nThe sun forbear to shine\nBut God, Who called me here below,\nWill be forever mine.\nWill be forever mine.\nYou are forever mine.",
-             'c0': "My chains are gone\nI've been set free\nMy God, my Savior has ransomed me\nAnd like a flood His mercy reigns\nUnending love, amazing grace",
-             'c1': "My chains are gone\nI've been set free\nMy God, my Savior has ransomed me\nAnd like a flood His mercy reigns\nUnending love, amazing grace",
-             'c2': "My chains are gone\nI've been set free\nMy God, my Savior has ransomed me\nAnd like a flood His mercy reigns\nUnending love, amazing grace"
+    lines = {'amazing_grace-v0-p0': "Amazing grace\nHow sweet the sound\nThat saved a wretch like me\nI once was lost, but now I'm found\nWas blind, but now I see",
+             'amazing_grace-v1-p0':"'Twas grace that taught my heart to fear\nAnd grace my fears relieved\nHow precious did that grace appear\nThe hour I first believed",
+             'amazing_grace-v2-p0': "The Lord has promised good to me\nHis word my hope secures\nHe will my shield and portion be\nAs long as life endures",
+             'amazing_grace-v3-p0': "The earth shall soon dissolve like snow\nThe sun forbear to shine\nBut God, Who called me here below,\nWill be forever mine.\nWill be forever mine.\nYou are forever mine.",
+             'amazing_grace-v4-p0': "My chains are gone\nI've been set free\nMy God, my Savior has ransomed me\nAnd like a flood His mercy reigns\nUnending love, amazing grace",
+             'amazing_grace-v5-p0': "My chains are gone\nI've been set free\nMy God, my Savior has ransomed me\nAnd like a flood His mercy reigns\nUnending love, amazing grace",
+             'amazing_grace-v6-p0': "My chains are gone\nI've been set free\nMy God, my Savior has ransomed me\nAnd like a flood His mercy reigns\nUnending love, amazing grace"
              }
 
     # Or recognize audio from your microphone for `secs` seconds
     def process_djv():
         last_lyrics = 0
+        dq = collections.deque(maxlen=5)
         while True:
             secs = 1
             song = djv.recognize(MicrophoneRecognizer, seconds=secs)
-            if song is not None:
+            song_name = song['song_name'] if song is not None else None
+            
+            dq.append(song_name)
+            dq_summary = {s: sum(1 for i in dq if i == s) for s in dq}
+            print dq_summary, 
+            modal_song = sorted(dq_summary.iteritems(), key=lambda x:x[1], reverse=True)[0]
+            print modal_song
+            if modal_song[1] < len(dq) / 2.0:
+                print 'No consensus'
+                continue
+
+            modal_song_name = modal_song[0]
+
+            if modal_song_name is not None:
 #                sys.stdout.write("\r%s" % song['song_name'])
 #                sys.stdout.flush()
-                if song['song_name'] == last_lyrics:
+                if modal_song_name != last_lyrics:
                     if USE_DISP:
-                        disp.update_text(lines[song['song_name']])
+                        disp.update_text(lines[modal_song_name])
                     else:
-                        print lines[song['song_name']]
-                last_lyrics = song['song_name']
+                        print lines[modal_song_name]
+                last_lyrics = modal_song_name
+            else:
+                print '.', 
     if USE_DISP:
         thread = threading.Thread(target=process_djv)
         thread.daemon = True
         thread.start()
         gtk.main()
     else:
+        print 'Running recognition'
         process_djv()
                 
 #        if song is None:
