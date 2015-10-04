@@ -34,7 +34,10 @@ class display():
             self.__destroy()
     def update_text(self, text):
         gtk.threads_enter()
-        self.buffer.set_text(text)
+        if text is not None:
+            self.buffer.set_text(text)
+        else:
+            self.buffer.set_text("")
         gtk.threads_leave()
 
 if __name__ == "__main__":
