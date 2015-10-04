@@ -49,11 +49,11 @@ class AudioRecorder:
         condition.release()
         return (in_data, pyaudio.paContinue)
 
-    def setWindowStepSizeSecs(value):
+    def setWindowStepSizeSecs(self, value):
         self.windowStepSizeSecs = value
         self.windowStepSize = int(self.windowStepSizeSecs * self.RATE)
 
-    def setWindowSizeSecs(value):
+    def setWindowSizeSecs(self, value):
         self.windowSizeSecs = value
         self.windowSize = int(self.windowSizeSecs * self.RATE)
 
