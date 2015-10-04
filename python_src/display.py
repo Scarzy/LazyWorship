@@ -27,17 +27,9 @@ class display():
         self.window.add(self.text)
         
     def __destroy(self):
-        print "Here"
-#        gtk.threads_enter()
-        print "There"
-        #self.window.unfullscreen()
-        #self.window.hide()
         gtk.main_quit()
-        print "Everywhere"
-#        gtk.threads_leave()
     
     def on_key_press(self, widget, event):
-        print "KEY! " + gtk.gdk.keyval_name(event.keyval)
         if gtk.gdk.keyval_name(event.keyval) == "Escape":
             self.__destroy()
     def update_text(self, text):
