@@ -16,7 +16,6 @@ class AudioRecorder:
     FORMAT = pyaudio.paInt16
     CHANNELS = 1
     RATE = 44100
-    RECORD_SECONDS = 5
 
     def __init__(self):
 
@@ -30,47 +29,62 @@ class AudioRecorder:
 
         self.stream.start_stream()
 
-        self.my_buffer = []
+        self.windowStepSizeSecs = 0.1
+        self.windowSizeSecs = 1
 
-        print("* recording")
+        self.windowStepSize = int(self.windowStepSizeSecs * self.RATE)
+        self.windowSize = int(self.windowSizeSecs * self.RATE)
+
+        self.windowBuffer = []
+
+        #print("* recording")
 
     def callback(self, in_data, frame_count, time_info, status):
-        print '* frame count = ', frame_count
+        #print '* frame count = ', frame_count
         data = np.fromstring(in_data, dtype=np.int16)
-        self.my_buffer.extend(data)
-        print 'length in_data = ', len(self.my_buffer)
+        self.windowBuffer.extend(data)
+        #print 'length windowBuffer = ', len(self.windowBuffer)
         condition.acquire()
         condition.notifyAll()
         condition.release()
         return (in_data, pyaudio.paContinue)
 
-    def getBuffer(self):
+    def setWindowStepSizeSecs(value):
+        self.windowStepSizeSecs = value
+        self.windowStepSize = int(self.windowStepSizeSecs * self.RATE)
+
+    def setWindowSizeSecs(value):
+        self.windowSizeSecs = value
+        self.windowSize = int(self.windowSizeSecs * self.RATE)
+
+    def getWindowBuffer(self):
         condition.acquire()
         condition.wait()
         condition.release()
-        temp_my_buffer = list(self.my_buffer)
-        self.my_buffer = []
-        return temp_my_buffer
+        if(len(self.windowBuffer) >= self.windowSize):
+            temp_my_buffer = list(self.windowBuffer[-self.windowSize:])
+            discardSize = (len(self.windowBuffer) - self.windowSize) + self.windowStepSize
+            self.windowBuffer[0:discardSize] = []
+            return temp_my_buffer
+        else:
+            return []
 
     def close(self):
         self.stream.stop_stream()
         self.stream.close()
         self.p.terminate()
 
+if __name__ == "__main__":
+    recorder = AudioRecorder()
 
-recorder = AudioRecorder()
+    for i in range(0,100):
+        buff = recorder.getWindowBuffer()
+        print 'buff length = ', len(buff)
 
+#    time.sleep(1)
 
-for i in range(0,10):
-    buff = recorder.getBuffer()
-    print 'buff length = ', len(buff)
+#    for i in range(0,10):
+ #       buff = recorder.getWindowBuffer()
+  #      print 'buff length = ', len(buff)
 
-time.sleep(1)
-
-for i in range(0,10):
-    buff = recorder.getBuffer()
-    print 'buff length = ', len(buff)
-
-#frames = recorder.readChunks()
-
-recorder.close()
+    recorder.close()
