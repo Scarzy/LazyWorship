@@ -3,7 +3,7 @@ import json
 import sys
 import threading
 
-USE_DISP = False
+USE_DISP = True
 
 if USE_DISP:
     import display
@@ -32,13 +32,13 @@ if __name__ == '__main__':
     if USE_DISP:
         disp = display.display()
 
-    lines = {'0': "Amazing grace\nHow sweet the sound\nThat saved a wretch like me\nI once was lost, but now I'm found\nWas blind, but now I see",
-             '1':"'Twas grace that taught my heart to fear\nAnd grace my fears relieved\nHow precious did that grace appear\nThe hour I first believed",
-             '2': "The Lord has promised good to me\nHis word my hope secures\nHe will my shield and portion be\nAs long as life endures",
-             '3': "The earth shall soon dissolve like snow\nThe sun forbear to shine\nBut God, Who called me here below,\nWill be forever mine.\nWill be forever mine.\nYou are forever mine.",
-             'c0': "My chains are gone\nI've been set free\nMy God, my Savior has ransomed me\nAnd like a flood His mercy reigns\nUnending love, amazing grace",
-             'c1': "My chains are gone\nI've been set free\nMy God, my Savior has ransomed me\nAnd like a flood His mercy reigns\nUnending love, amazing grace",
-             'c2': "My chains are gone\nI've been set free\nMy God, my Savior has ransomed me\nAnd like a flood His mercy reigns\nUnending love, amazing grace"
+    lines = {'amazing_grace-v0-p0': "Amazing grace\nHow sweet the sound\nThat saved a wretch like me\nI once was lost, but now I'm found\nWas blind, but now I see",
+             'amazing_grace-v1-p0':"'Twas grace that taught my heart to fear\nAnd grace my fears relieved\nHow precious did that grace appear\nThe hour I first believed",
+             'amazing_grace-v2-p0': "The Lord has promised good to me\nHis word my hope secures\nHe will my shield and portion be\nAs long as life endures",
+             'amazing_grace-v3-p0': "The earth shall soon dissolve like snow\nThe sun forbear to shine\nBut God, Who called me here below,\nWill be forever mine.\nWill be forever mine.\nYou are forever mine.",
+             'amazing_grace-v4-p0': "My chains are gone\nI've been set free\nMy God, my Savior has ransomed me\nAnd like a flood His mercy reigns\nUnending love, amazing grace",
+             'amazing_grace-v5-p0': "My chains are gone\nI've been set free\nMy God, my Savior has ransomed me\nAnd like a flood His mercy reigns\nUnending love, amazing grace",
+             'amazing_grace-v6-p0': "My chains are gone\nI've been set free\nMy God, my Savior has ransomed me\nAnd like a flood His mercy reigns\nUnending love, amazing grace"
              }
 
     # Or recognize audio from your microphone for `secs` seconds
