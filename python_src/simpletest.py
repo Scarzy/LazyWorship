@@ -1,9 +1,14 @@
 import warnings
 import json
 import sys
-import display
 import threading
-import gtk
+
+USE_DISP = False
+
+if USE_DISP:
+    import display
+    import gtk
+
 warnings.filterwarnings("ignore")
 
 from dejavu import Dejavu
@@ -24,7 +29,8 @@ if __name__ == '__main__':
     # Recognize audio from a file
 #    song = djv.recognize(FileRecognizer, "mp3/Sean-Fournier--Falling-For-You.mp3")
 #    print "From file we recognized: %s\n" % song
-    disp = display.display()
+    if USE_DISP:
+        disp = display.display()
 
     lines = {'0': "Amazing grace\nHow sweet the sound\nThat saved a wretch like me\nI once was lost, but now I'm found\nWas blind, but now I see",
              '1':"'Twas grace that taught my heart to fear\nAnd grace my fears relieved\nHow precious did that grace appear\nThe hour I first believed",
@@ -42,15 +48,21 @@ if __name__ == '__main__':
             secs = 1
             song = djv.recognize(MicrophoneRecognizer, seconds=secs)
             if song is not None:
-                sys.stdout.write("\r%s" % song['song_name'])
-                sys.stdout.flush()
+#                sys.stdout.write("\r%s" % song['song_name'])
+#                sys.stdout.flush()
                 if song['song_name'] == last_lyrics:
-                    disp.update_text(lines[song['song_name']])
+                    if USE_DISP:
+                        disp.update_text(lines[song['song_name']])
+                    else:
+                        print lines[song['song_name']]
                 last_lyrics = song['song_name']
-    thread = threading.Thread(target=process_djv)
-    thread.daemon = True
-    thread.start()
-    gtk.main()
+    if USE_DISP:
+        thread = threading.Thread(target=process_djv)
+        thread.daemon = True
+        thread.start()
+        gtk.main()
+    else:
+        process_djv()
                 
 #        if song is None:
 #            print "Nothing recognized -- did you play the song out loud so your mic could hear it? :)"
